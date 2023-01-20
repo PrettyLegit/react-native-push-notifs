@@ -1,7 +1,8 @@
 import { registerRootComponent } from "expo";
 import { StatusBar } from "expo-status-bar";
-import { StyleSheet, Button, View } from "react-native";
+import { StyleSheet, Button, View, Alert, Platform } from "react-native";
 import * as Notifications from "expo-notifications";
+import { useEffect } from "react";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => {
@@ -13,43 +14,83 @@ Notifications.setNotificationHandler({
   },
 });
 
-const allowsNotificationsAsync = async () => {
-  const settings = await Notifications.getPermissionsAsync();
-  return (
-    settings.granted ||
-    settings.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL
-  );
-};
-
-const requestPermissionsAsync = async () => {
-  return await Notifications.requestPermissionsAsync({
-    ios: {
-      allowAlert: true,
-      allowBadge: true,
-      allowSound: true,
-      allowAnnouncements: true,
-    },
-  });
-};
-
 export default function App() {
-  async function scheduleNotificationHandler() {
-    const hasPushNotificationPermissionGranted =
-      await allowsNotificationsAsync();
+  useEffect(() => {
+    async function configurePushNotifications() {
+      const { status } = await Notifications.getPermissionsAsync();
+      let finalStatus = status;
 
-    if (!hasPushNotificationPermissionGranted) {
-      await requestPermissionsAsync();
+      if (finalStatus !== "granted") {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+
+      if (finalStatus !== "granted") {
+        Alert.alert(
+          "Permission required",
+          "Push notifications need the appropriate permissions."
+        );
+        return;
+      }
+      const pushTokenData = await Notifications.getExpoPushTokenAsync();
+      console.log("pushTokenData", pushTokenData);
+
+      if (Platform.OS === "android") {
+        Notifications.setNotificationChannelAsync("default", {
+          name: "default",
+          importance: Notifications.AndroidImportance.DEFAULT,
+        });
+      }
     }
+    configurePushNotifications();
+  }, []);
 
+  useEffect(() => {
+    const subscription = Notifications.addNotificationReceivedListener(
+      (notification) => {
+        console.log("received", notification.request.content.data);
+      }
+    );
+
+    const subscription2 = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        console.log("response", response);
+      }
+    );
+
+    return () => {
+      subscription.remove();
+      subscription2.remove();
+    };
+  }, []);
+
+  function scheduleNotificationHandler() {
     Notifications.scheduleNotificationAsync({
       content: {
-        title: "My first local notification",
-        body: "This is the first local notification we are sending!",
+        title: "questionable mental state",
+        body: "drop out of school to save a couple bands",
         data: { userName: "Bruh" },
       },
       trigger: {
         seconds: 1,
       },
+    });
+  }
+
+  function sendPushNotificationHandler() {
+    fetch("https://exp.host/--/api/v2/push/send", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Accept-Encoding": "gzip, deflate",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        to: `ExponentPushToken[${process.env.push_token}]`,
+        title: "push notification",
+        body: "drop out of school to save a couple bands",
+        data: { userName: "Bruh" },
+      }),
     });
   }
 
@@ -59,6 +100,10 @@ export default function App() {
       <Button
         title="Schedule Notifications"
         onPress={scheduleNotificationHandler}
+      />
+      <Button
+        title="Send Push Notifications"
+        onPress={sendPushNotificationHandler}
       />
     </View>
   );
